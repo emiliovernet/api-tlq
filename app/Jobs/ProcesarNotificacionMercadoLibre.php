@@ -33,43 +33,74 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
         try {
             $accessToken = $authService->getAccessToken();
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$accessToken}",
-            ])->get("https://api.mercadolibre.com/orders/{$this->orderId}");
+            // 1. Obtener orden
+            $orderResponse = Http::withToken($accessToken)
+                ->get("https://api.mercadolibre.com/orders/{$this->orderId}");
 
-            if (!$response->successful()) {
-                Log::error("Error al obtener orden {$this->orderId}: " . $response->body());
+            if (!$orderResponse->successful()) {
+                Log::error("Error al obtener orden {$this->orderId}: " . $orderResponse->body());
                 return;
             }
 
-            $order = $response->json();
+            $orderData = $orderResponse->json();
 
-            $item = $order['order_items'][0]['item'] ?? [];
-            $shipping = $order['shipping'] ?? [];
-            $payment = $order['payments'][0] ?? [];
-            $buyer = $order['buyer'] ?? [];
-            $direccion = $shipping['receiver_address'] ?? [];
+            // 2. Obtener billing_info
+            $billingResponse = Http::withToken($accessToken)
+                ->withHeaders(['x-version' => '2'])
+                ->get("https://api.mercadolibre.com/orders/{$this->orderId}/billing_info");
 
-            Order::UpdateorCreate([
-                'nro_venta' => $order['id'],
-                'tipo_venta' => 'ML',
-                'fecha_venta' => $order['date_created'] ?? null,
-                'fecha_entrega' => $shipping['estimated_delivery_final'] ?? null,
-                'nombre_producto' => $item['title'] ?? null,
-                'link_ml' => "https://www.mercadolibre.com.ar/ventas/{$order['id']}/detalle",
-                'cantidad_unidades' => $order['order_items'][0]['quantity'] ?? 1,
-                'precio_venta' => $order['order_items'][0]['unit_price'] ?? 0,
-                'saldo_mercadolibre' => $payment['total_paid_amount'] ?? 0,
-                'comision_ml' => $order['order_items'][0]['sale_fee'] ?? 0,
-                'costo_envio' => $payment['shipping_cost'] ?? null,
-                'impuestos' => $payment['taxes_amount'] ?? 0,
-                'cuit_comprador' => $buyer['billing_info']['doc_number'] ?? null,
-                'nombre_destinatario' => trim(($buyer['first_name'] ?? '') . ' ' . ($buyer['last_name'] ?? '')),
-                'direccion_cliente' => trim(optional($direccion)['street_name'] . ' ' . optional($direccion)['street_number']),
-                'ciudad' => optional($direccion)['city']['name'] ?? null,
-                'provincia' => optional($direccion)['state']['name'] ?? null,
-                'codigo_postal' => optional($direccion)['zip_code'] ?? null,
-            ]);
+            if (!$billingResponse->successful()) {
+                Log::error("Error al obtener billing_info de orden {$this->orderId}: " . $billingResponse->body());
+                return;
+            }
+
+            $billingData = $billingResponse->json();
+
+            // 3. Obtener fecha estimada de entrega
+            $shipmentId = $orderData['shipping']['id'] ?? null;
+            $fechaEntrega = null;
+
+            if ($shipmentId) {
+                $shippingResponse = Http::withToken($accessToken)
+                    ->get("https://api.mercadolibre.com/shipments/{$shipmentId}/lead_time");
+
+                if ($shippingResponse->successful()) {
+                    $shippingData = $shippingResponse->json();
+                    $fechaEntrega = $shippingData['estimated_delivery_final']['date'] ?? null;
+                } else {
+                    Log::warning("No se pudo obtener lead_time para orden {$this->orderId}: " . $shippingResponse->body());
+                }
+            }
+
+            // 4. Crear o actualizar orden
+            $order = Order::updateOrCreate( 
+                ['nro_venta' => $this->orderId],
+                [
+                    'tipo_venta' => 'ML',
+                    'fecha_venta' => $orderData['date_closed'] ?? null,
+                    'fecha_entrega' => $fechaEntrega,
+                    'nombre_producto' => $orderData['order_items'][0]['item']['title'] ?? '',
+                    'link_ml' => "https://www.mercadolibre.com.ar/ventas/{$this->orderId}/detalle",
+                    'link_amazon' => "https://www.amazon.com/dp/{$orderData['order_items'][0]['item']['seller_sku']}",
+                    'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
+                    'precio_venta' => $orderData['total_amount'] ?? null,
+                    'saldo_mercadolibre' => null,
+                    'comision_ml' => $orderData['order_items'][0]['sale_fee'] ?? null,
+                    'costo_envio' => !empty($orderData['shipping_cost']) && $orderData['shipping_cost'] != 0.00 
+                                        ? $orderData['shipping_cost'] 
+                                        : null,
+                    'impuestos' => null,
+                    'cuit_comprador' => ($billingData['buyer']['billing_info']['identification']['type'] ?? '') === 'CUIT'
+                        ? $billingData['buyer']['billing_info']['identification']['number']
+                        : null,
+                    'nombre_destinatario' => trim(($billingData['buyer']['billing_info']['name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['last_name'] ?? '')),
+                    'direccion_cliente' => trim(($billingData['buyer']['billing_info']['address']['street_name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['address']['street_number'] ?? '')),
+                    'ciudad' => $billingData['buyer']['billing_info']['address']['city_name'] ?? '',
+                    'provincia' => $billingData['buyer']['billing_info']['address']['state']['name'] ?? '',
+                    'codigo_postal' => $billingData['buyer']['billing_info']['address']['zip_code'] ?? '',
+                ]
+            );
+
 
             Log::info("Orden {$this->orderId} guardada exitosamente.");
 
