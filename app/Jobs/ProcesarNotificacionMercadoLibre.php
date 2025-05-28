@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Order;
+use App\Models\Producto;
 use App\Services\MercadoLibreAuthService;
 use App\Services\FlokzuService;
 use Illuminate\Bus\Queueable;
@@ -30,17 +31,27 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             // Loguea la notificación recibida
             Log::info('Notificación recibida de MercadoLibre:', $this->requestData);
 
-            // Procesar solo si es una notificación de orden
-            if ($this->requestData['topic'] !== 'orders_v2') {
-                Log::info("Notificación ignorada, topic no es orders_v2: {$this->requestData['topic']}");
+            // Validar el tipo de notificación
+            $topic = $this->requestData['topic'] ?? null;
+
+            if ($topic === 'orders_v2') {
+                $this->handleOrderNotification($authService, $flokzuService);
+            } elseif ($topic === 'items') {
+                $this->handleItemNotification($authService);
+            } else {
+                Log::info("Notificación ignorada, topic no soportado: {$topic}");
                 return;
             }
+        } catch (\Exception $e) {
+            Log::error("Excepción al procesar notificación: " . $e->getMessage());
+        }
+    }
 
+    protected function handleOrderNotification(MercadoLibreAuthService $authService, FlokzuService $flokzuService): void
+    {
+        try {
             // Extraer parámetros
             $orderId = str_replace('/orders/', '', $this->requestData['resource']);
-            $userId = $this->requestData['user_id'];
-            $applicationId = $this->requestData['application_id'];
-
             $accessToken = $authService->getAccessToken();
 
             // 1. Obtener orden
@@ -118,6 +129,57 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
         } catch (\Exception $e) {
             Log::error("Excepción al procesar orden {$orderId}: " . $e->getMessage());
+        }
+    }
+
+    protected function handleItemNotification(MercadoLibreAuthService $authService): void
+    {
+        try {
+            // Extraer parámetros
+            $itemId = str_replace('/items/', '', $this->requestData['resource']);
+            $accessToken = $authService->getAccessToken();
+
+            // Obtener información del producto
+            $itemResponse = Http::withToken($accessToken)
+                ->get("https://api.mercadolibre.com/items/{$itemId}");
+
+            if (!$itemResponse->successful()) {
+                Log::error("Error al obtener producto {$itemId}: " . $itemResponse->body());
+                return;
+            }
+
+            $itemData = $itemResponse->json();
+
+            // Validar si el producto existe en la base de datos
+            $product = Producto::where('id_publicacion', $itemData['id'])->first();
+
+            if (!$product) {
+                Log::info("Producto {$itemData['id']} no encontrado en la base de datos.");
+                return;
+            }
+
+            // Comparar y actualizar campos si es necesario
+            $updates = [];
+            if ($product->precio != $itemData['price']) {
+                $updates['precio'] = $itemData['price'];
+            }
+            if ($product->stock != $itemData['available_quantity']) {
+                $updates['stock'] = $itemData['available_quantity'];
+            }
+            if ($product->estado != $itemData['status']) {
+                $updates['estado'] = $itemData['status'];
+            }
+
+            if (!empty($updates)) {
+                $updates['ultima_actualizacion'] = now();
+                $product->update($updates);
+                Log::info("Producto {$itemData['id']} actualizado:", $updates);
+            } else {
+                Log::info("Producto {$itemData['id']} sin cambios en los campos monitoreados.");
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Excepción al procesar producto {$itemId}: " . $e->getMessage());
         }
     }
 }
