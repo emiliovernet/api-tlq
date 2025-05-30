@@ -24,7 +24,6 @@ class FlokzuService
                     "PRECIOVENTA" => (string) $order->precio_venta,
                     "SALDOML" => (string) $order->saldo_mercadolibre ?? '',
                     "COMISIONML" => (string) $order->comision_ml ?? '',
-                    "APORTE ML" => is_null($order->aporte_ml) ? '' : (string) $order->aporte_ml,
                     "COSTOENVIO" => (string) $order->costo_envio ?? '',
                     "Impuestos" => (string) $order->impuestos ?? '',
                     "CUITCOMPRADOR" => $order->cuit_comprador ?? '',
@@ -33,6 +32,7 @@ class FlokzuService
                     "CIUDAD" => $order->ciudad,
                     "PROVINCIA" => $order->provincia,
                     "CODIGO POSTAL" => $order->codigo_postal,
+                    "APORTE ML" => (string) $order->aporte_ml
                 ]
             ];
 
