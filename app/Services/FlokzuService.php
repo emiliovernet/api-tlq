@@ -32,7 +32,7 @@ class FlokzuService
                     "CIUDAD" => $order->ciudad,
                     "PROVINCIA" => $order->provincia,
                     "CODIGO POSTAL" => $order->codigo_postal,
-                    "APORTE ML" => (string) $order->aporte_ml
+                    "APORTE ML" => $order->aporte_ml
                 ]
             ];
 
