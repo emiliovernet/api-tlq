@@ -17,6 +17,7 @@ class Order extends Model
         'precio_venta',
         'saldo_mercadolibre',
         'comision_ml',
+        'aporte_ml',
         'costo_envio',
         'impuestos',
         'cuit_comprador',
@@ -31,4 +32,4 @@ class Order extends Model
         'fecha_venta' => 'datetime',
         'fecha_entrega' => 'datetime',
     ];
-};
+}

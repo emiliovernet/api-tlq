@@ -107,6 +107,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'precio_venta' => $orderData['total_amount'] ?? null,
                     'saldo_mercadolibre' => null,
                     'comision_ml' => $orderData['order_items'][0]['sale_fee'] ?? null,
+                    'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
                     'costo_envio' => !empty($orderData['shipping_cost']) && $orderData['shipping_cost'] != 0.00
                         ? $orderData['shipping_cost']
                         : null,
