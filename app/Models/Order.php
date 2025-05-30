@@ -13,6 +13,7 @@ class Order extends Model
         'fecha_entrega',
         'nombre_producto',
         'link_ml',
+        'link_amazon',
         'cantidad_unidades',
         'precio_venta',
         'saldo_mercadolibre',

@@ -93,6 +93,10 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 }
             }
 
+            // 4. Construir link_amazon
+            $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
+            $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
+
             // 4. Crear o actualizar orden
             $order = Order::updateOrCreate(
                 ['nro_venta' => $orderId],
@@ -102,7 +106,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'fecha_entrega' => $fechaEntrega,
                     'nombre_producto' => null,
                     'link_ml' => "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle",
-                    'link_amazon' => "https://www.amazon.com/dp/{$orderData['order_items'][0]['item']['seller_sku']}",
+                    'link_amazon' => $linkAmazon,
                     'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
                     'precio_venta' => $orderData['total_amount'] ?? null,
                     'saldo_mercadolibre' => null,
