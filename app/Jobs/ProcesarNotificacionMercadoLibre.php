@@ -132,14 +132,22 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
         }
     }
 
-    protected function handleItemNotification(MercadoLibreAuthService $authService): void
+        protected function handleItemNotification(MercadoLibreAuthService $authService): void
     {
         try {
             // Extraer parámetros
             $itemId = str_replace('/items/', '', $this->requestData['resource']);
-            $accessToken = $authService->getAccessToken();
 
-            // Obtener información del producto
+            // Validar si el producto existe en la base de datos
+            $product = Producto::where('id_publicacion', $itemId)->first();
+
+            if (!$product) {
+                Log::info("Producto {$itemId} no encontrado en la base de datos.");
+                return;
+            }
+
+            // Obtener información del producto de MercadoLibre
+            $accessToken = $authService->getAccessToken();
             $itemResponse = Http::withToken($accessToken)
                 ->get("https://api.mercadolibre.com/items/{$itemId}");
 
@@ -149,14 +157,6 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             }
 
             $itemData = $itemResponse->json();
-
-            // Validar si el producto existe en la base de datos
-            $product = Producto::where('id_publicacion', $itemData['id'])->first();
-
-            if (!$product) {
-                Log::info("Producto {$itemData['id']} no encontrado en la base de datos.");
-                return;
-            }
 
             // Comparar y actualizar campos si es necesario
             $updates = [];
