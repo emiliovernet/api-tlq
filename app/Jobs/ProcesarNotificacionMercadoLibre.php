@@ -35,7 +35,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             $topic = $this->requestData['topic'] ?? null;
 
             if ($topic === 'orders_v2') {
-                $this->handleOrderNotification($authService, $flokzuService);
+                // $this->handleOrderNotification($authService, $flokzuService);
             } elseif ($topic === 'items') {
                 $this->handleItemNotification($authService);
             } else {
