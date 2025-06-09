@@ -46,7 +46,7 @@ class FlokzuService
                 $identifier = $response->json('identifier');
                 Log::info("Orden {$order->nro_venta} enviada a Flokzu exitosamente. Identifier: {$identifier}");
 
-                // Enviar nota a MercadoLibre
+                // Enviar nota a MercadoLibre usando order_id
                 $this->enviarNotaMercadoLibre($order->nro_venta, $identifier);
             } else {
                 Log::error("Fallo al enviar orden {$order->nro_venta} a Flokzu.");
@@ -62,9 +62,11 @@ class FlokzuService
         try {
             $accessToken = app(MercadoLibreAuthService::class)->getAccessToken();
 
-            $noteResponse = Http::withToken($accessToken)->post("https://api.mercadolibre.com/orders/{$orderId}/notes", [
-                'note' => "{$identifier}"
-            ]);
+            $noteResponse = Http::withToken($accessToken)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post("https://api.mercadolibre.com/orders/{$orderId}/notes", [
+                    'note' => $identifier
+                ]);
 
             if ($noteResponse->successful()) {
                 Log::info("Nota agregada a la orden {$orderId} con identifier {$identifier}");

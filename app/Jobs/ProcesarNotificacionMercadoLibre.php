@@ -35,7 +35,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             $topic = $this->requestData['topic'] ?? null;
 
             if ($topic === 'orders_v2') {
-                // $this->handleOrderNotification($authService, $flokzuService);
+                $this->handleOrderNotification($authService, $flokzuService);
             } elseif ($topic === 'items') {
                 $this->handleItemNotification($authService);
             } else {
@@ -53,6 +53,13 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             // Extraer parámetros
             $orderId = str_replace('/orders/', '', $this->requestData['resource']);
             $accessToken = $authService->getAccessToken();
+
+            // Verificar si la orden ya existe
+            $existingOrder = Order::where('nro_venta', $orderId)->first();
+            if ($existingOrder) {
+                Log::info("Orden {$orderId} ya existe, ignorando notificación.");
+                return;
+            }
 
             // 1. Obtener orden
             $orderResponse = Http::withToken($accessToken)
@@ -77,55 +84,57 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             $billingData = $billingResponse->json();
 
-            // 3. Obtener fecha estimada de entrega
-            $shipmentId = $orderData['shipping']['id'] ?? null;
-            $fechaEntrega = null;
+            // 3. Obtener fecha de entrega desde manufacturing_ending_date
+            $fechaEntrega = $orderData['manufacturing_ending_date'] ?? null;
 
+            // 4. Obtener costo de envío desde shipments/lead_time
+            $costoEnvio = null;
+            $shipmentId = $orderData['shipping']['id'] ?? null;
             if ($shipmentId) {
                 $shippingResponse = Http::withToken($accessToken)
                     ->get("https://api.mercadolibre.com/shipments/{$shipmentId}/lead_time");
 
                 if ($shippingResponse->successful()) {
                     $shippingData = $shippingResponse->json();
-                    $fechaEntrega = $shippingData['estimated_delivery_final']['date'] ?? null;
+                    $costoEnvio = $shippingData['list_cost'] ?? null;
                 } else {
                     Log::warning("No se pudo obtener lead_time para orden {$orderId}: " . $shippingResponse->body());
                 }
             }
 
-            // 4. Construir link_amazon
+            // 5. Construir link_amazon
             $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
             $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
 
-            // 4. Crear o actualizar orden
-            $order = Order::updateOrCreate(
-                ['nro_venta' => $orderId],
-                [
-                    'tipo_venta' => 'ML',
-                    'fecha_venta' => $orderData['date_closed'] ?? null,
-                    'fecha_entrega' => $fechaEntrega,
-                    'nombre_producto' => null,
-                    'link_ml' => "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle",
-                    'link_amazon' => $linkAmazon,
-                    'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
-                    'precio_venta' => $orderData['total_amount'] ?? null,
-                    'saldo_mercadolibre' => null,
-                    'comision_ml' => $orderData['order_items'][0]['sale_fee'] ?? null,
-                    'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
-                    'costo_envio' => !empty($orderData['shipping_cost']) && $orderData['shipping_cost'] != 0.00
-                        ? $orderData['shipping_cost']
-                        : null,
-                    'impuestos' => null,
-                    'cuit_comprador' => ($billingData['buyer']['billing_info']['identification']['type'] ?? '') === 'CUIT'
-                        ? $billingData['buyer']['billing_info']['identification']['number']
-                        : null,
-                    'nombre_destinatario' => trim(($billingData['buyer']['billing_info']['name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['last_name'] ?? '')),
-                    'direccion_cliente' => trim(($billingData['buyer']['billing_info']['address']['street_name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['address']['street_number'] ?? '')),
-                    'ciudad' => $billingData['buyer']['billing_info']['address']['city_name'] ?? '',
-                    'provincia' => $billingData['buyer']['billing_info']['address']['state']['name'] ?? '',
-                    'codigo_postal' => $billingData['buyer']['billing_info']['address']['zip_code'] ?? '',
-                ]
-            );
+            // 6. Usar pack_id para el link_ml
+            $packId = $orderData['pack_id'] ?? null;
+            $linkMl = $packId ? "https://www.mercadolibre.com.ar/ventas/{$packId}/detalle" : null;
+
+            // 7. Crear orden
+            $order = Order::create([
+                'nro_venta' => $orderId,
+                'tipo_venta' => 'ML',
+                'fecha_venta' => $orderData['date_closed'] ?? null,
+                'fecha_entrega' => $fechaEntrega,
+                'nombre_producto' => null,
+                'link_ml' => $linkMl,
+                'link_amazon' => $linkAmazon,
+                'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
+                'precio_venta' => $orderData['total_amount'] ?? null,
+                'saldo_mercadolibre' => null,
+                'comision_ml' => $orderData['order_items'][0]['sale_fee'] ?? null,
+                'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
+                'costo_envio' => $costoEnvio,
+                'impuestos' => null,
+                'cuit_comprador' => ($billingData['buyer']['billing_info']['identification']['type'] ?? '') === 'CUIT'
+                    ? $billingData['buyer']['billing_info']['identification']['number']
+                    : null,
+                'nombre_destinatario' => trim(($billingData['buyer']['billing_info']['name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['last_name'] ?? '')),
+                'direccion_cliente' => trim(($billingData['buyer']['billing_info']['address']['street_name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['address']['street_number'] ?? '')),
+                'ciudad' => $billingData['buyer']['billing_info']['address']['city_name'] ?? '',
+                'provincia' => $billingData['buyer']['billing_info']['address']['state']['name'] ?? '',
+                'codigo_postal' => $billingData['buyer']['billing_info']['address']['zip_code'] ?? '',
+            ]);
 
             Log::info("Orden {$orderId} guardada exitosamente.");
 
@@ -137,7 +146,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
         }
     }
 
-        protected function handleItemNotification(MercadoLibreAuthService $authService): void
+    protected function handleItemNotification(MercadoLibreAuthService $authService): void
     {
         try {
             // Extraer parámetros
