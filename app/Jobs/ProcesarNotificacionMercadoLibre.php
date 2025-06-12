@@ -126,9 +126,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
                 'costo_envio' => $costoEnvio,
                 'impuestos' => null,
-                'cuit_comprador' => ($billingData['buyer']['billing_info']['identification']['type'] ?? '') === 'CUIT'
-                    ? $billingData['buyer']['billing_info']['identification']['number']
-                    : null,
+                'cuit_comprador' => $billingData['buyer']['billing_info']['identification']['number'] ?? null,
                 'nombre_destinatario' => trim(($billingData['buyer']['billing_info']['name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['last_name'] ?? '')),
                 'direccion_cliente' => trim(($billingData['buyer']['billing_info']['address']['street_name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['address']['street_number'] ?? '')),
                 'ciudad' => $billingData['buyer']['billing_info']['address']['city_name'] ?? '',
