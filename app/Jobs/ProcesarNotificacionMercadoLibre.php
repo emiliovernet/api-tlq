@@ -72,6 +72,12 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             $orderData = $orderResponse->json();
 
+            // Filtro: Solo procesar órdenes con status 'paid'
+            if (($orderData['status'] ?? '') !== 'paid') {
+                Log::info("Orden {$orderId} ignorada: estado no es 'paid' (estado actual: {$orderData['status']})");
+                return;
+            }
+
             // 2. Obtener billing_info
             $billingResponse = Http::withToken($accessToken)
                 ->withHeaders(['x-version' => '2'])
