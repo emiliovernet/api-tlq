@@ -11,29 +11,33 @@ class FlokzuService
     public function enviarOrden(Order $order): void
     {
         try {
+            $data = [
+                "TIPOVENTA" => $order->tipo_venta,
+                "NROVENTA" => $order->nro_venta,
+                "FECHAVENTA" => optional($order->fecha_venta)->format('Y/m/d'),
+                "FECHAENTREGA" => optional($order->fecha_entrega)->format('Y/m/d'),
+                "LINKML" => $order->link_ml ?? '',
+                "LINKAMAZON" => $order->link_amazon ?? '',
+                "Cantidad de Unidades" => (string) $order->cantidad_unidades,
+                "PRECIOVENTA" => (string) $order->precio_venta,
+                "SALDOML" => (string) ($order->saldo_mercadolibre ?? ''),
+                "COMISIONML" => (string) ($order->comision_ml ?? ''),
+                "COSTOENVIO" => ($order->costo_envio === 0 || is_null($order->costo_envio)) ? '' : (string) $order->costo_envio,
+                "Impuestos" => (string) ($order->impuestos ?? ''),
+                "CUITCOMPRADOR" => $order->cuit_comprador ?? '',
+                "NOMBREDESTINATARIO" => $order->nombre_destinatario ?? '',
+                "Datos Cliente" => $order->direccion_cliente ?? '',
+                "CIUDAD" => $order->ciudad ?? '',
+                "PROVINCIA" => $order->provincia ?? '',
+                "CODIGO POSTAL" => $order->codigo_postal ?? '',
+                "APORTE ML" => (string) ($order->aporte_ml ?? '')
+            ];
+
+            $data = array_map(fn($v) => is_null($v) ? '' : $v, $data);
+
             $payload = [
                 "processId" => env('FLOKZU_PROCESS_ID'),
-                "data" => [
-                    "TIPOVENTA" => $order->tipo_venta,
-                    "NROVENTA" => $order->nro_venta,
-                    "FECHAVENTA" => optional($order->fecha_venta)->format('Y/m/d'),
-                    "FECHAENTREGA" => optional($order->fecha_entrega)->format('Y/m/d'),
-                    "LINKML" => $order->link_ml,
-                    "LINKAMAZON" => $order->link_amazon ?? '',
-                    "Cantidad de Unidades" => (string) $order->cantidad_unidades,
-                    "PRECIOVENTA" => (string) $order->precio_venta,
-                    "SALDOML" => (string) $order->saldo_mercadolibre ?? '',
-                    "COMISIONML" => (string) $order->comision_ml ?? '',
-                    "COSTOENVIO" => (string) $order->costo_envio ?? '',
-                    "Impuestos" => (string) $order->impuestos ?? '',
-                    "CUITCOMPRADOR" => $order->cuit_comprador ?? '',
-                    "NOMBREDESTINATARIO" => $order->nombre_destinatario,
-                    "Datos Cliente" => $order->direccion_cliente,
-                    "CIUDAD" => $order->ciudad,
-                    "PROVINCIA" => $order->provincia,
-                    "CODIGO POSTAL" => $order->codigo_postal,
-                    "APORTE ML" => $order->aporte_ml
-                ]
+                "data" => $data
             ];
 
             $response = Http::withHeaders([
@@ -45,8 +49,6 @@ class FlokzuService
             if ($response->successful()) {
                 $identifier = $response->json('identifier');
                 Log::info("Orden {$order->nro_venta} enviada a Flokzu exitosamente. Identifier: {$identifier}");
-
-                // Enviar nota a MercadoLibre usando order_id
                 $this->enviarNotaMercadoLibre($order->nro_venta, $identifier);
             } else {
                 Log::error("Fallo al enviar orden {$order->nro_venta} a Flokzu.");
