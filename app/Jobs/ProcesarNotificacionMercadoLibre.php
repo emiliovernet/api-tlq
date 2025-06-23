@@ -28,10 +28,8 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
     public function handle(MercadoLibreAuthService $authService, FlokzuService $flokzuService): void
     {
         try {
-            // Loguea la notificación recibida
             Log::info('Notificación recibida de MercadoLibre:', $this->requestData);
 
-            // Validar el tipo de notificación
             $topic = $this->requestData['topic'] ?? null;
 
             if ($topic === 'orders_v2') {
@@ -50,18 +48,15 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
     protected function handleOrderNotification(MercadoLibreAuthService $authService, FlokzuService $flokzuService): void
     {
         try {
-            // Extraer parámetros
             $orderId = str_replace('/orders/', '', $this->requestData['resource']);
             $accessToken = $authService->getAccessToken();
 
-            // Verificar si la orden ya existe
             $existingOrder = Order::where('nro_venta', $orderId)->first();
             if ($existingOrder) {
                 Log::info("Orden {$orderId} ya existe, ignorando notificación.");
                 return;
             }
 
-            // 1. Obtener orden
             $orderResponse = Http::withToken($accessToken)
                 ->get("https://api.mercadolibre.com/orders/{$orderId}");
 
@@ -72,13 +67,11 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             $orderData = $orderResponse->json();
 
-            // Filtro: Solo procesar órdenes con status 'paid'
             if (($orderData['status'] ?? '') !== 'paid') {
                 Log::info("Orden {$orderId} ignorada: estado no es 'paid' (estado actual: {$orderData['status']})");
                 return;
             }
 
-            // 2. Obtener billing_info
             $billingResponse = Http::withToken($accessToken)
                 ->withHeaders(['x-version' => '2'])
                 ->get("https://api.mercadolibre.com/orders/{$orderId}/billing_info");
@@ -90,10 +83,8 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             $billingData = $billingResponse->json();
 
-            // 3. Obtener fecha de entrega desde manufacturing_ending_date
             $fechaEntrega = $orderData['manufacturing_ending_date'] ?? null;
 
-            // 4. Obtener costo de envío desde shipments/lead_time
             $costoEnvio = null;
             $shipmentId = $orderData['shipping']['id'] ?? null;
             if ($shipmentId) {
@@ -102,21 +93,18 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
                 if ($shippingResponse->successful()) {
                     $shippingData = $shippingResponse->json();
-                    $costoEnvio = $shippingData['list_cost'] ?? null;
+                    $listCost = $shippingData['list_cost'] ?? null;
+                    $costoEnvio = ($listCost === 0) ? '' : $listCost;
                 } else {
                     Log::warning("No se pudo obtener lead_time para orden {$orderId}: " . $shippingResponse->body());
                 }
             }
 
-            // 5. Construir link_amazon
             $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
             $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
 
-            // 6. Usar pack_id para el link_ml
-            $packId = $orderData['pack_id'] ?? null;
-            $linkMl = $packId ? "https://www.mercadolibre.com.ar/ventas/{$packId}/detalle" : null;
+            $linkMl = "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle";
 
-            // 7. Crear orden
             $order = Order::create([
                 'nro_venta' => $orderId,
                 'tipo_venta' => 'ML',
@@ -142,7 +130,6 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             Log::info("Orden {$orderId} guardada exitosamente.");
 
-            // Disparar a Flokzu
             $flokzuService->enviarOrden($order);
 
         } catch (\Exception $e) {
@@ -153,10 +140,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
     protected function handleItemNotification(MercadoLibreAuthService $authService): void
     {
         try {
-            // Extraer parámetros
             $itemId = str_replace('/items/', '', $this->requestData['resource']);
-
-            // Validar si el producto existe en la base de datos
             $product = Producto::where('id_publicacion', $itemId)->first();
 
             if (!$product) {
@@ -164,7 +148,6 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 return;
             }
 
-            // Obtener información del producto de MercadoLibre
             $accessToken = $authService->getAccessToken();
             $itemResponse = Http::withToken($accessToken)
                 ->get("https://api.mercadolibre.com/items/{$itemId}");
@@ -176,7 +159,6 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             $itemData = $itemResponse->json();
 
-            // Comparar y actualizar campos si es necesario
             $updates = [];
             if ($product->precio != $itemData['price']) {
                 $updates['precio'] = $itemData['price'];
