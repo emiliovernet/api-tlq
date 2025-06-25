@@ -94,7 +94,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 if ($shippingResponse->successful()) {
                     $shippingData = $shippingResponse->json();
                     $listCost = $shippingData['list_cost'] ?? null;
-                    $costoEnvio = ($listCost === 0) ? '' : $listCost;
+                    $costoEnvio = ($listCost === 0) ? null : $listCost;
                 } else {
                     Log::warning("No se pudo obtener lead_time para orden {$orderId}: " . $shippingResponse->body());
                 }
