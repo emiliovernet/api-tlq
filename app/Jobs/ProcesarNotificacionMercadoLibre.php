@@ -52,8 +52,31 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             $accessToken = $authService->getAccessToken();
 
             $existingOrder = Order::where('nro_venta', $orderId)->first();
+
+            $orderResponse = Http::withToken($accessToken)
+                ->get("https://api.mercadolibre.com/orders/{$orderId}");
+
+            if (!$orderResponse->successful()) {
+                Log::error("Error al obtener orden {$orderId}: " . $orderResponse->body());
+                return;
+            }
+
+            $orderData = $orderResponse->json();
+            $orderStatus = $orderData['status'] ?? '';
+
             if ($existingOrder) {
-                Log::info("Orden {$orderId} ya existe, ignorando notificación.");
+                if ($orderStatus === 'cancelled') {
+                    Log::info("Orden {$orderId} fue cancelada, disparando acción en Google Sheets.");
+
+                    // Acción para escribir en Google Sheets
+                    $this->escribirCancelacionEnGoogleSheets($existingOrder, $orderData);
+                    $existingOrder->update(['estado_orden' => 'cancelled']);
+                    Log::info("Orden {$orderId} actualizada a estado 'cancelled' en la base de datos.");
+                    return;
+
+                } else {
+                    Log::info("Orden {$orderId} ya existe y no fue cancelada, ignorando.");
+                }
                 return;
             }
 
@@ -126,11 +149,15 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 'ciudad' => $billingData['buyer']['billing_info']['address']['city_name'] ?? '',
                 'provincia' => $billingData['buyer']['billing_info']['address']['state']['name'] ?? '',
                 'codigo_postal' => $billingData['buyer']['billing_info']['address']['zip_code'] ?? '',
+                'estado_orden' => $orderData['status'] ?? null,
             ]);
 
             Log::info("Orden {$orderId} guardada exitosamente.");
 
-            $flokzuService->enviarOrden($order);
+            $identifier = $flokzuService->enviarOrden($order);
+            if ($identifier) {
+                $order->update(['flokzu_identifier' => $identifier]);
+            }
 
         } catch (\Exception $e) {
             Log::error("Excepción al procesar orden {$orderId}: " . $e->getMessage());
@@ -182,4 +209,26 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             Log::error("Excepción al procesar producto {$itemId}: " . $e->getMessage());
         }
     }
+
+    protected function escribirCancelacionEnGoogleSheets(Order $orden): void
+    {
+        try {
+            $webhookUrl = env('GOOGLE_SHEETS_WEBHOOK_URL');
+
+            $data = [
+                'identifier' => $orden->flokzu_identifier,
+            ];
+
+            $response = Http::post($webhookUrl, $data);
+
+            if ($response->successful()) {
+                Log::info("Se marcó como 'Pendiente de revisión' el proceso Flokzu {$orden->flokzu_identifier} en Sheets.");
+            } else {
+                Log::warning("Error al actualizar estado en Sheets: " . $response->body());
+            }
+        } catch (\Exception $e) {
+            Log::error("Excepción al enviar cancelación a Sheets: " . $e->getMessage());
+        }
+    }
+
 }

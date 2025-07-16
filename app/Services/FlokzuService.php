@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 class FlokzuService
 {
-    public function enviarOrden(Order $order): void
+    public function enviarOrden(Order $order): ?string
     {
         try {
             $data = [
@@ -47,9 +47,11 @@ class FlokzuService
             ])->post('https://app.flokzu.com/flokzuopenapi/api/v2/process/instance', $payload);
 
             if ($response->successful()) {
-                $identifier = $response->json('identifier');
+                $body = $response->json();
+                $identifier = $body['identifier'] ?? null; // <-- Acceso seguro
                 Log::info("Orden {$order->nro_venta} enviada a Flokzu exitosamente. Identifier: {$identifier}");
                 $this->enviarNotaMercadoLibre($order->nro_venta, $identifier);
+                return $identifier;
             } else {
                 Log::error("Fallo al enviar orden {$order->nro_venta} a Flokzu.");
                 Log::error("Status: {$response->status()} - Body: " . $response->body());
@@ -57,6 +59,7 @@ class FlokzuService
         } catch (\Exception $e) {
             Log::error("Error en FlokzuService para orden {$order->nro_venta}: " . $e->getMessage());
         }
+        return null;
     }
 
     private function enviarNotaMercadoLibre(string $orderId, string $identifier): void
