@@ -115,6 +115,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 }
 
                 $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
+                $nombreProducto = $orderData['order_items'][0]['item']['title'] ?? null; // <-- EXTRAER NOMBRE DEL PRODUCTO
                 $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
                 $linkMl = "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle";
 
@@ -123,7 +124,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'tipo_venta' => 'ML',
                     'fecha_venta' => $orderData['date_closed'] ?? null,
                     'fecha_entrega' => $fechaEntrega,
-                    'nombre_producto' => null,
+                    'nombre_producto' => $nombreProducto, // <-- GUARDAR EN DB
                     'link_ml' => $linkMl,
                     'link_amazon' => $linkAmazon,
                     'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
