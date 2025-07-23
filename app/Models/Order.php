@@ -29,6 +29,7 @@ class Order extends Model
         'codigo_postal',
         'flokzu_identifier',
         'estado_orden',
+        'sku'
     ];
 
     protected $casts = [

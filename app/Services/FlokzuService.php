@@ -17,6 +17,7 @@ class FlokzuService
                 "FECHAVENTA" => optional($order->fecha_venta)->format('Y/m/d'),
                 "FECHAENTREGA" => optional($order->fecha_entrega)->format('Y/m/d'),
                 "NOMBREPRODUCTO" => $order->nombre_producto ?? '', // <-- ENVIAR NOMBRE DEL PRODUCTO
+                "SKU" => $order->sku ?? '', // <-- ENVIAR SKU
                 "LINKML" => $order->link_ml ?? '',
                 "LINKAMAZON" => $order->link_amazon ?? '',
                 "Cantidad de Unidades" => (string) $order->cantidad_unidades,

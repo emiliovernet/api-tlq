@@ -124,7 +124,8 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'tipo_venta' => 'ML',
                     'fecha_venta' => $orderData['date_closed'] ?? null,
                     'fecha_entrega' => $fechaEntrega,
-                    'nombre_producto' => $nombreProducto, // <-- GUARDAR EN DB
+                    'nombre_producto' => $nombreProducto,
+                    'sku' => $sellerSku,
                     'link_ml' => $linkMl,
                     'link_amazon' => $linkAmazon,
                     'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
