@@ -114,6 +114,35 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     }
                 }
 
+                // Obtener payment_id y calcular impuestos
+                // Buscar el primer pago aprobado en el array de payments
+                $approvedPayment = collect($orderData['payments'] ?? [])
+                    ->first(fn($p) => $p['status'] === 'approved');
+
+                $paymentId = $approvedPayment['id'] ?? null;
+                $impuestos = null;
+
+                if ($paymentId) {
+                    $paymentResponse = Http::withToken($accessToken)
+                        ->get("https://api.mercadopago.com/v1/payments/{$paymentId}");
+
+                    if ($paymentResponse->successful()) {
+                        $paymentData = $paymentResponse->json();
+
+                        // Tomar el valor net_received_amount como saldo_mercadolibre
+                        $saldo_mercadolibre = floatval($paymentData['transaction_details']['net_received_amount'] ?? 0);
+
+                        $impuestos = collect($paymentData['charges_details'] ?? [])
+                            ->where('type', 'tax')
+                            ->sum(fn($item) => $item['amounts']['original'] ?? 0);
+                    } else {
+                        Log::warning("No se pudo obtener información de pago {$paymentId}: " . $paymentResponse->body());
+                        $saldo_mercadolibre = null;
+                    }
+                } else {
+                    $saldo_mercadolibre = null;
+                }
+
                 $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
                 $nombreProducto = $orderData['order_items'][0]['item']['title'] ?? null; // <-- EXTRAER NOMBRE DEL PRODUCTO
                 $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
@@ -121,6 +150,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
                 $order = Order::create([
                     'nro_venta' => $orderId,
+                    'payment_id' => $paymentId,
                     'tipo_venta' => 'ML',
                     'fecha_venta' => $orderData['date_closed'] ?? null,
                     'fecha_entrega' => $fechaEntrega,
@@ -130,11 +160,11 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'link_amazon' => $linkAmazon,
                     'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
                     'precio_venta' => $orderData['total_amount'] ?? null,
-                    'saldo_mercadolibre' => null,
+                    'saldo_mercadolibre' => $saldo_mercadolibre,
                     'comision_ml' => $orderData['order_items'][0]['sale_fee'] ?? null,
                     'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
                     'costo_envio' => $costoEnvio,
-                    'impuestos' => null,
+                    'impuestos' => $impuestos,
                     'cuit_comprador' => $billingData['buyer']['billing_info']['identification']['number'] ?? null,
                     'nombre_destinatario' => trim(($billingData['buyer']['billing_info']['name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['last_name'] ?? '')),
                     'direccion_cliente' => trim(($billingData['buyer']['billing_info']['address']['street_name'] ?? '') . ' ' . ($billingData['buyer']['billing_info']['address']['street_number'] ?? '')),
