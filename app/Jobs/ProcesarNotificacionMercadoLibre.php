@@ -114,39 +114,39 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     }
                 }
 
-                // Obtener payment_id y calcular impuestos
-                // Buscar el primer pago aprobado en el array de payments
-                $approvedPayment = collect($orderData['payments'] ?? [])
-                    ->first(fn($p) => $p['status'] === 'approved');
+                // Buscar todos los pagos aprobados
+                $approvedPayments = collect($orderData['payments'] ?? [])
+                    ->where('status', 'approved');
 
-                $paymentId = $approvedPayment['id'] ?? null;
-                $impuestos = null;
+                $saldo_mercadolibre = 0;
+                $impuestos = 0;
+                $paymentIds = [];
 
-                if ($paymentId) {
+                foreach ($approvedPayments as $payment) {
+                    $paymentIds[] = $payment['id'];
                     $paymentResponse = Http::withToken($accessToken)
-                        ->get("https://api.mercadopago.com/v1/payments/{$paymentId}");
-
+                        ->get("https://api.mercadopago.com/v1/payments/{$payment['id']}");
                     if ($paymentResponse->successful()) {
                         $paymentData = $paymentResponse->json();
-
-                        // Tomar el valor net_received_amount como saldo_mercadolibre
-                        $saldo_mercadolibre = floatval($paymentData['transaction_details']['net_received_amount'] ?? 0);
-
-                        $impuestos = collect($paymentData['charges_details'] ?? [])
+                        $saldo_mercadolibre += floatval($paymentData['transaction_details']['net_received_amount'] ?? 0);
+                        $impuestos += collect($paymentData['charges_details'] ?? [])
                             ->where('type', 'tax')
                             ->sum(fn($item) => $item['amounts']['original'] ?? 0);
-                    } else {
-                        Log::warning("No se pudo obtener información de pago {$paymentId}: " . $paymentResponse->body());
-                        $saldo_mercadolibre = null;
                     }
-                } else {
-                    $saldo_mercadolibre = null;
                 }
+
+                // Si quieres guardar el primer payment_id, puedes dejarlo así:
+                $paymentId = $paymentIds[0] ?? null;
 
                 $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
                 $nombreProducto = $orderData['order_items'][0]['item']['title'] ?? null; // <-- EXTRAER NOMBRE DEL PRODUCTO
                 $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
                 $linkMl = "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle";
+
+                // Calcular comisión ML multiplicando sale_fee por cantidad de unidades
+                $saleFee = $orderData['order_items'][0]['sale_fee'] ?? 0;
+                $cantidadUnidades = $orderData['order_items'][0]['quantity'] ?? 1;
+                $comisionMl = $saleFee * $cantidadUnidades;
 
                 $order = Order::create([
                     'nro_venta' => $orderId,
@@ -158,10 +158,10 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'sku' => $sellerSku,
                     'link_ml' => $linkMl,
                     'link_amazon' => $linkAmazon,
-                    'cantidad_unidades' => $orderData['order_items'][0]['quantity'] ?? 1,
+                    'cantidad_unidades' => $cantidadUnidades,
                     'precio_venta' => $orderData['total_amount'] ?? null,
                     'saldo_mercadolibre' => $saldo_mercadolibre,
-                    'comision_ml' => $orderData['order_items'][0]['sale_fee'] ?? null,
+                    'comision_ml' => $comisionMl,
                     'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
                     'costo_envio' => $costoEnvio,
                     'impuestos' => $impuestos,
