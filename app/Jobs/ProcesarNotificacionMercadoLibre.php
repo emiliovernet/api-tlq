@@ -144,8 +144,8 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 $linkMl = "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle";
 
                 // Calcular comisión ML multiplicando sale_fee por cantidad de unidades
-                $saleFee = $orderData['order_items'][0]['sale_fee'] ?? 0;
-                $cantidadUnidades = $orderData['order_items'][0]['quantity'] ?? 1;
+                $saleFee = floatval($orderData['order_items'][0]['sale_fee'] ?? 0);
+                $cantidadUnidades = intval($orderData['order_items'][0]['quantity'] ?? 1);
                 $comisionMl = $saleFee * $cantidadUnidades;
 
                 $order = Order::create([
