@@ -180,6 +180,10 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 if ($identifier) {
                     $order->update(['flokzu_identifier' => $identifier]);
                 }
+
+                // Verificar si es el producto específico y actualizar stock a 5
+                $this->actualizarStockProductoEspecifico($order, $authService);
+
                 return;
             }
 
@@ -258,6 +262,36 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             }
         } catch (\Exception $e) {
             Log::error("Excepción al enviar cancelación a Sheets: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Actualiza el stock a 5 para el producto MLA1940860870 después de cada venta
+     */
+    protected function actualizarStockProductoEspecifico(Order $order, MercadoLibreAuthService $authService): void
+    {
+        try {
+            // Verificar si el SKU corresponde al producto específico
+            if ($order->sku !== 'F4200') {
+                return;
+            }
+
+            $itemId = 'MLA1940860870';
+            $accessToken = $authService->getAccessToken();
+
+            $response = Http::withToken($accessToken)
+                ->put("https://api.mercadolibre.com/items/{$itemId}", [
+                    'available_quantity' => 5
+                ]);
+
+            if ($response->successful()) {
+                Log::info("Stock actualizado exitosamente para producto {$itemId} a 5 unidades después de la venta {$order->nro_venta}");
+            } else {
+                Log::error("Error al actualizar stock del producto {$itemId}: " . $response->body());
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Excepción al actualizar stock del producto específico: " . $e->getMessage());
         }
     }
 
