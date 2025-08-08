@@ -281,7 +281,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
             $response = Http::withToken($accessToken)
                 ->put("https://api.mercadolibre.com/items/{$itemId}", [
-                    'available_quantity' => 5
+                    'available_quantity' => 2
                 ]);
 
             if ($response->successful()) {
