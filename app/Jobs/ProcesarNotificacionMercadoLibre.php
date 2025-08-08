@@ -266,7 +266,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
     }
 
     /**
-     * Actualiza el stock a 5 para el producto MLA1940860870 después de cada venta
+     * Actualiza el stock a 2 para el producto MLA1940860870 después de cada venta
      */
     protected function actualizarStockProductoEspecifico(Order $order, MercadoLibreAuthService $authService): void
     {
@@ -285,7 +285,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 ]);
 
             if ($response->successful()) {
-                Log::info("Stock actualizado exitosamente para producto {$itemId} a 5 unidades después de la venta {$order->nro_venta}");
+                Log::info("Stock actualizado exitosamente para producto {$itemId} a 2 unidades después de la venta {$order->nro_venta}");
             } else {
                 Log::error("Error al actualizar stock del producto {$itemId}: " . $response->body());
             }
