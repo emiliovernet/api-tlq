@@ -271,6 +271,9 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
     protected function actualizarStockProductoEspecifico(Order $order, MercadoLibreAuthService $authService): void
     {
         try {
+            // Desactivado temporalmente por decisión operativa
+            return;
+
             // Verificar si el SKU corresponde al producto específico
             if ($order->sku !== 'F4200') {
                 return;
