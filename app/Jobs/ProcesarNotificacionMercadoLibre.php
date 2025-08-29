@@ -272,7 +272,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
     {
         try {
             // Desactivado temporalmente por decisión operativa
-            // return;
+            return;
 
             // Verificar si el SKU corresponde al producto específico
             if ($order->sku !== 'F4200') {
