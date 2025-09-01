@@ -23,7 +23,7 @@ class FlokzuService
                 "Cantidad de Unidades" => (string) $order->cantidad_unidades,
                 "PRECIOVENTA" => (string) $order->precio_venta,
                 "SALDOML" => (string) ($order->saldo_mercadolibre ?? ''),
-                "COMISIONML" => (string) ($order->comision_ml ?? ''),
+                "COMISIONML" => $order->comision_ml ?? '',
                 "COSTOENVIO" => (is_null($order->costo_envio) || $order->costo_envio === 0) ? '' : (string) $order->costo_envio,
                 "Impuestos" => (string) ($order->impuestos ?? ''),
                 "CUITCOMPRADOR" => $order->cuit_comprador ?? '',
