@@ -148,6 +148,9 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 $cantidadUnidades = intval($orderData['order_items'][0]['quantity'] ?? 1);
                 $comisionMl = $saleFee * $cantidadUnidades;
 
+                $comisionMlValue = ($comisionMl > 0 ? (string)$comisionMl : null);
+                Log::info("Valor comision_ml a guardar: " . var_export($comisionMlValue, true) . " (tipo: " . gettype($comisionMlValue) . ")");
+
                 $order = Order::create([
                     'nro_venta' => $orderId,
                     'payment_id' => $paymentId,
@@ -161,7 +164,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'cantidad_unidades' => $cantidadUnidades,
                     'precio_venta' => $orderData['total_amount'] ?? null,
                     'saldo_mercadolibre' => $saldo_mercadolibre,
-                    'comision_ml' => ($comisionMl == 0 ? null : $comisionMl),
+                    'comision_ml' => ($comisionMl > 0 ? (string)$comisionMl : null),
                     'aporte_ml' => $orderData['payments'][0]['coupon_amount'] ?? null,
                     'costo_envio' => $costoEnvio,
                     'impuestos' => $impuestos,

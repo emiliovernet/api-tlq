@@ -36,6 +36,6 @@ class Order extends Model
     protected $casts = [
         'fecha_venta' => 'datetime',
         'fecha_entrega' => 'datetime',
-        'comision_ml' => 'float',
+        // 'comision_ml' => 'float',
     ];
 }
