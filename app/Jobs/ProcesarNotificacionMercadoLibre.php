@@ -144,9 +144,21 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 $linkMl = "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle";
 
                 // Calcular comisión ML multiplicando sale_fee por cantidad de unidades
+                Log::info("Datos de la orden para comisión:", [
+                    'sale_fee_exists' => isset($orderData['order_items'][0]['sale_fee']),
+                    'sale_fee_value' => $orderData['order_items'][0]['sale_fee'] ?? 'no existe',
+                    'quantity' => $orderData['order_items'][0]['quantity'] ?? 'no existe'
+                ]);
+
                 $saleFee = floatval($orderData['order_items'][0]['sale_fee'] ?? 0);
                 $cantidadUnidades = intval($orderData['order_items'][0]['quantity'] ?? 1);
                 $comisionMl = $saleFee * $cantidadUnidades;
+
+                Log::info("Cálculo de comisión:", [
+                    'saleFee' => $saleFee,
+                    'cantidadUnidades' => $cantidadUnidades,
+                    'comisionMl' => $comisionMl
+                ]);
 
                 $comisionMlValue = ($comisionMl > 0 ? (string)$comisionMl : null);
                 Log::info("Valor comision_ml a guardar: " . var_export($comisionMlValue, true) . " (tipo: " . gettype($comisionMlValue) . ")");
