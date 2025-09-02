@@ -62,6 +62,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             }
 
             $orderData = $orderResponse->json();
+            
             $orderStatus = $orderData['status'] ?? '';
 
             if ($existingOrder) {
@@ -139,29 +140,12 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                 $paymentId = $paymentIds[0] ?? null;
 
                 $sellerSku = $orderData['order_items'][0]['item']['seller_sku'] ?? null;
-                $nombreProducto = $orderData['order_items'][0]['item']['title'] ?? null; // <-- EXTRAER NOMBRE DEL PRODUCTO
+                $nombreProducto = $orderData['order_items'][0]['item']['title'] ?? null;
                 $linkAmazon = $sellerSku ? "https://www.amazon.com/dp/{$sellerSku}" : null;
                 $linkMl = "https://www.mercadolibre.com.ar/ventas/{$orderId}/detalle";
 
-                // Calcular comisión ML multiplicando sale_fee por cantidad de unidades
-                Log::info("Datos de la orden para comisión:", [
-                    'sale_fee_exists' => isset($orderData['order_items'][0]['sale_fee']),
-                    'sale_fee_value' => $orderData['order_items'][0]['sale_fee'] ?? 'no existe',
-                    'quantity' => $orderData['order_items'][0]['quantity'] ?? 'no existe'
-                ]);
-
-                $saleFee = floatval($orderData['order_items'][0]['sale_fee'] ?? 0);
-                $cantidadUnidades = intval($orderData['order_items'][0]['quantity'] ?? 1);
-                $comisionMl = $saleFee * $cantidadUnidades;
-
-                Log::info("Cálculo de comisión:", [
-                    'saleFee' => $saleFee,
-                    'cantidadUnidades' => $cantidadUnidades,
-                    'comisionMl' => $comisionMl
-                ]);
-
-                $comisionMlValue = ($comisionMl > 0 ? (string)$comisionMl : null);
-                Log::info("Valor comision_ml a guardar: " . var_export($comisionMlValue, true) . " (tipo: " . gettype($comisionMlValue) . ")");
+                // Obtener comisión ML con reintentos si es necesario
+                $comisionMl = $this->getSaleFeeSafely($orderData, $orderId, $accessToken);
 
                 $order = Order::create([
                     'nro_venta' => $orderId,
@@ -173,7 +157,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     'sku' => $sellerSku,
                     'link_ml' => $linkMl,
                     'link_amazon' => $linkAmazon,
-                    'cantidad_unidades' => $cantidadUnidades,
+                    'cantidad_unidades' => intval($orderData['order_items'][0]['quantity'] ?? 1),
                     'precio_venta' => $orderData['total_amount'] ?? null,
                     'saldo_mercadolibre' => $saldo_mercadolibre,
                     'comision_ml' => ($comisionMl > 0 ? (string)$comisionMl : null),
@@ -209,6 +193,54 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
         } catch (\Exception $e) {
             Log::error("Excepción al procesar orden {$orderId}: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Obtiene el valor sale_fee con reintentos si es necesario
+     * 
+     * @param array $orderData
+     * @param string $orderId
+     * @param string $accessToken
+     * @return float
+     */
+    protected function getSaleFeeSafely(array $orderData, string $orderId, string $accessToken): float
+    {
+        // Intentar obtener sale_fee del objeto de orden inicial
+        $saleFee = floatval($orderData['order_items'][0]['sale_fee'] ?? 0);
+        $cantidadUnidades = intval($orderData['order_items'][0]['quantity'] ?? 1);
+        $comisionMl = $saleFee * $cantidadUnidades;
+        
+        // Si ya tenemos un valor positivo, lo devolvemos directamente
+        if ($comisionMl > 0) {
+            return $comisionMl;
+        }
+        
+        // Si no hay comisión (0 o null), reintentamos con delay
+        Log::info("Valor de comisión ML inicial es 0 o nulo. Reintentando en 60 segundos...");
+        
+        // Esperar antes de reintentar
+        sleep(60);
+        
+        // Obtener datos actualizados de la orden
+        $refreshOrderResponse = Http::withToken($accessToken)
+            ->get("https://api.mercadolibre.com/orders/{$orderId}");
+            
+        if ($refreshOrderResponse->successful()) {
+            $refreshedOrderData = $refreshOrderResponse->json();
+            $saleFee = floatval($refreshedOrderData['order_items'][0]['sale_fee'] ?? 0);
+            $cantidadUnidades = intval($refreshedOrderData['order_items'][0]['quantity'] ?? 1);
+            $comisionMl = $saleFee * $cantidadUnidades;
+            
+            if ($comisionMl > 0) {
+                Log::info("Comisión ML obtenida en segundo intento: {$comisionMl}");
+            } else {
+                Log::warning("No se pudo obtener un valor válido de comisión ML después del reintento");
+            }
+        } else {
+            Log::warning("Error al reintentar obtener sale_fee: " . $refreshOrderResponse->body());
+        }
+        
+        return $comisionMl;
     }
 
     protected function handleItemNotification(MercadoLibreAuthService $authService): void
@@ -312,5 +344,4 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             Log::error("Excepción al actualizar stock del producto específico: " . $e->getMessage());
         }
     }
-
 }
