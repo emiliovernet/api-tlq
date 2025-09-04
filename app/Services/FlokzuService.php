@@ -84,4 +84,40 @@ class FlokzuService
             Log::error("Error al enviar nota a MercadoLibre para orden {$orderId}: " . $e->getMessage());
         }
     }
+
+    public function actualizarOrdenCancelada(Order $order): bool
+    {
+        try {
+            // Verificar que la orden tenga un identifier de Flokzu
+            if (empty($order->flokzu_identifier)) {
+                Log::warning("Orden {$order->nro_venta} no tiene identifier de Flokzu, no se puede actualizar.");
+                return false;
+            }
+
+            $payload = [
+                "identifier" => $order->flokzu_identifier,
+                "data" => [
+                    "ESTADO" => "CANCELADA"
+                ]
+            ];
+
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'X-Api-Key' => env('FLOKZU_API_KEY'),
+                'X-Username' => env('FLOKZU_USERNAME'),
+            ])->put('https://app.flokzu.com/flokzuopenapi/api/v2/process/instance', $payload);
+
+            if ($response->successful()) {
+                Log::info("Orden {$order->nro_venta} actualizada a CANCELADA en Flokzu. Identifier: {$order->flokzu_identifier}");
+                return true;
+            } else {
+                Log::error("Fallo al actualizar orden {$order->nro_venta} a CANCELADA en Flokzu.");
+                Log::error("Status: {$response->status()} - Body: " . $response->body());
+                return false;
+            }
+        } catch (\Exception $e) {
+            Log::error("Error al actualizar orden cancelada {$order->nro_venta} en Flokzu: " . $e->getMessage());
+            return false;
+        }
+    }
 }

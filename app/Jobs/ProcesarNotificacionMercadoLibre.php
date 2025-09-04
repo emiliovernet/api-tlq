@@ -72,16 +72,23 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
                     return;
                 }
 
-                // Si el estado cambió, actualizar y disparar Google Sheets
-                if ($orderStatus !== 'paid') {
+                // Si el estado cambió, actualizar y disparar Google Sheets + Flokzu si es cancelación
+                if ($orderStatus !== $existingOrder->estado_orden) {
                     $existingOrder->update(['estado_orden' => $orderStatus]);
                     $this->cambiarEstadoEnGoogleSheets($existingOrder, $orderStatus);
-                    Log::info("Orden {$orderId} actualizada a estado '{$orderStatus}' y enviado a Google Sheets.");
+                    
+                    // Si es una cancelación, enviar a Flokzu
+                    if ($orderStatus === 'cancelled') {
+                        $flokzuService->actualizarOrdenCancelada($existingOrder);
+                    }
+                    
+                    Log::info("Orden {$orderId} actualizada a estado '{$orderStatus}' y enviado a Google Sheets" . 
+                             ($orderStatus === 'cancelled' ? ' y Flokzu' : '') . ".");
                     return;
                 }
 
                 // Si por algún motivo no entra en los casos anteriores, ignorar
-                Log::info("Orden {$orderId} ya existe, ignorando notificación.");
+                Log::info("Orden {$orderId} ya existe con el mismo estado '{$orderStatus}', ignorando notificación.");
                 return;
             }
 
