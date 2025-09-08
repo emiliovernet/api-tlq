@@ -396,7 +396,7 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
             }
 
             // Construir mensaje final
-            $texto = "¡Hola {$buyerName}! ¡Bienvenido a Tienda Lo Quiero Acá! "
+            $texto = "¡Hola {$buyerName}! ¡Bienvenido/a a Tienda Lo Quiero Acá! "
                 . "Confirmamos tu compra de {$producto}. "
                 . "Traemos tus productos desde EE.UU, rápido y seguro. "
                 . "El precio es final, todos los costos incluidos. "
