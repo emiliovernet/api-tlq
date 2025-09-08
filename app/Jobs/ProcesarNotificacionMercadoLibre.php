@@ -182,12 +182,16 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
                 Log::info("Orden {$orderId} guardada exitosamente.");
 
+                // 1. Enviar la orden a Flokzu
                 $identifier = $flokzuService->enviarOrden($order);
                 if ($identifier) {
                     $order->update(['flokzu_identifier' => $identifier]);
                 }
+                
+                // 2. Enviar mensaje al comprador
+                $this->enviarMensajeComprador($order, $orderData, $accessToken);
 
-                // Verificar si es el producto específico y actualizar stock a 5
+                // 3. Actualizar stock específico
                 $this->actualizarStockProductoEspecifico($order, $authService);
 
                 return;
@@ -349,6 +353,103 @@ class ProcesarNotificacionMercadoLibre implements ShouldQueue
 
         } catch (\Exception $e) {
             Log::error("Excepción al actualizar stock del producto específico: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Envía un mensaje al comprador usando el recurso messages de MercadoLibre
+     * URL: /messages/packs/{pack_id}/sellers/{seller_id}?tag=post_sale
+     * Límite: 350 caracteres, encoding ISO-8859-1, 500 rpm para recursos de escritura
+     */
+    protected function enviarMensajeComprador(Order $order, array $orderData, string $accessToken): void
+    {
+        try {
+            $sellerId = $orderData['seller']['id'] ?? null;
+            $buyerId = $orderData['buyer']['id'] ?? null;
+            $orderId = $order->nro_venta;
+            
+            // Usar pack_id si existe, sino usar order_id
+            $packId = $orderData['pack_id'] ?? $orderId;
+
+            if (!$sellerId || !$buyerId) {
+                Log::warning("No se puede enviar mensaje: sellerId o buyerId faltante para orden {$orderId}");
+                return;
+            }
+
+            // Obtener nombre del comprador
+            $buyerName = $orderData['buyer']['first_name'] ?? $orderData['buyer']['nickname'] ?? 'Cliente';
+            $producto = $order->nombre_producto ?? ($orderData['order_items'][0]['item']['title'] ?? '');
+
+            // Construir mensaje base sin el producto
+            $textoBase = "¡Hola {$buyerName}! ¡Bienvenido a Tienda Lo Quiero Acá! "
+                . "Confirmamos tu compra de "
+                . ". Traemos tus productos desde EE.UU, rápido y seguro. "
+                . "El precio es final, todos los costos incluidos. "
+                . "¡Gracias por confiar en nosotros!";
+
+            // Calcular espacio disponible para el nombre del producto
+            $caracteresDisponibles = 350 - mb_strlen($textoBase, 'UTF-8');
+            
+            // Recortar el nombre del producto si es necesario
+            if (mb_strlen($producto, 'UTF-8') > $caracteresDisponibles) {
+                $producto = mb_substr($producto, 0, $caracteresDisponibles - 3, 'UTF-8');
+            }
+
+            // Construir mensaje final
+            $texto = "¡Hola {$buyerName}! ¡Bienvenido a Tienda Lo Quiero Acá! "
+                . "Confirmamos tu compra de {$producto}. "
+                . "Traemos tus productos desde EE.UU, rápido y seguro. "
+                . "El precio es final, todos los costos incluidos. "
+                . "¡Gracias por confiar en nosotros!";
+
+            $payload = [
+                'from' => [
+                    'user_id' => (string)$sellerId
+                ],
+                'to' => [
+                    'user_id' => (string)$buyerId,
+                    'resource' => 'orders',
+                    'resource_id' => (string)$orderId,
+                    'site_id' => 'MLA'
+                ],
+                'text' => $texto
+            ];
+
+            $url = "https://api.mercadolibre.com/messages/packs/{$packId}/sellers/{$sellerId}?tag=post_sale";
+
+            $response = Http::withToken($accessToken)
+                ->withHeaders(['Content-Type' => 'application/json'])
+                ->post($url, $payload);
+
+            if ($response->successful()) {
+                $responseData = $response->json();
+                $messageId = $responseData['id'] ?? 'N/A';
+                $moderationStatus = $responseData['message_moderation']['status'] ?? 'unknown';
+                
+                Log::info("Mensaje enviado exitosamente al comprador {$buyerId} para orden {$orderId}. " . 
+                         "Message ID: {$messageId}, Moderación: {$moderationStatus}");
+            } else {
+                $statusCode = $response->status();
+                $errorBody = $response->body();
+                
+                // Manejar errores específicos
+                if ($statusCode === 403) {
+                    $errorData = $response->json();
+                    $errorCode = $errorData['code'] ?? 'unknown';
+                    
+                    if ($errorCode === 'blocked_conversation_send_message_forbidden') {
+                        Log::warning("Mensajería bloqueada para orden cancelada {$orderId}");
+                    } else {
+                        Log::warning("Acceso denegado al enviar mensaje para orden {$orderId}: {$errorBody}");
+                    }
+                } elseif ($statusCode === 400) {
+                    Log::warning("Error en formato de mensaje para orden {$orderId}: {$errorBody}");
+                } else {
+                    Log::error("Error HTTP {$statusCode} al enviar mensaje para orden {$orderId}: {$errorBody}");
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Excepción al enviar mensaje al comprador para orden {$order->nro_venta}: " . $e->getMessage());
         }
     }
 }
